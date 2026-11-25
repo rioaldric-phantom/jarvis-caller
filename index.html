@@ -29,14 +29,8 @@
       margin-bottom: 24px;
       transition: transform 0.2s, box-shadow 0.2s;
     }
-    .speaking {
-      transform: scale(1.12);
-      box-shadow: 0 0 50px #38bdf8, inset 0 0 30px #38bdf8;
-    }
-    .listening {
-      border-color: #22c55e;
-      box-shadow: 0 0 40px #22c55e;
-    }
+    .speaking { transform: scale(1.12); box-shadow: 0 0 50px #38bdf8, inset 0 0 30px #38bdf8; }
+    .listening { border-color: #22c55e; box-shadow: 0 0 40px #22c55e; }
     button {
       background: #0284c7;
       color: white;
@@ -64,12 +58,10 @@
   </div>
 
   <script>
-    // 1. PASTE YOUR FREE GROQ API KEY HERE:
-   const GROQ_API_KEY = "gsk_RsQ4gqjfszHvVUsu7Bn3WGdyb3" + "FYoP2FnQxJcYIPBkm2HpCq8fXC";
+    const GEMINI_KEY = "AQ.Ab8RN6JOMWm3ypk9HLzfK_BRnY" + "URPmlHCTMkaswyKUtfkIvl_g";
 
-    const SYSTEM_PROMPT = "You are J.A.R.V.I.S., Tony Stark's AI assistant. Speak concisely in 1 to 3 short sentences, polite, calm, and slightly witty. Never use markdown, bullet points, or emojis because your text is read aloud.";
-
-    let messages = [{ role: "system", content: SYSTEM_PROMPT }];
+    const SYSTEM_PROMPT = "You are J.A.R.V.I.S., Tony Stark's AI assistant. Reply in 1 to 2 short, polite, calm sentences. No markdown or emojis.";
+    let chatHistory = [];
     let active = false;
     let recognition;
 
@@ -77,58 +69,36 @@
     const statusEl = document.getElementById("status");
     const transcriptEl = document.getElementById("transcript");
 
-    // Grab initial message from Grok Bot URL (?msg=...)
     const urlParams = new URLSearchParams(window.location.search);
     const initialMsg = urlParams.get("msg") || "Good day, Sir. Systems are online. How may I assist you?";
 
-   function getJarvisVoice() {
+    function getJarvisVoice() {
       const voices = speechSynthesis.getVoices();
       return (
-        voices.find(v => v.name.includes("Ryan") && v.lang.includes("GB")) ||
         voices.find(v => v.name.includes("Google UK English Male")) ||
         voices.find(v => v.name.includes("Daniel")) ||
-        voices.find(v => v.name.includes("Arthur")) ||
         voices.find(v => v.lang === "en-GB") ||
         voices[0]
       );
     }
 
-let currentAudio = null;
+    function speak(text, callback) {
+      speechSynthesis.cancel();
+      const utter = new SpeechSynthesisUtterance(text);
+      utter.voice = getJarvisVoice();
+      utter.pitch = 0.88;
+      utter.rate = 1.02;
 
-    async function speak(text, callback) {
-      if (currentAudio) {
-        currentAudio.pause();
-        currentAudio = null;
-      }
-
-      arc.className = "arc speaking";
-      statusEl.textContent = "JARVIS speaking...";
-      transcriptEl.textContent = text;
-
-      try {
-    const res = await fetch("https://tiktok-tts.weilnet." + "workers.dev/api/generation", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text: text, voice: "en_uk_003" })
-        });
-        const data = await res.json();
-        if (!data.data) throw new Error("No audio data");
-
-        currentAudio = new Audio("data:audio/mp3;base64," + data.data);
-        currentAudio.onended = () => {
-          arc.className = "arc";
-          if (callback && active) callback();
-        };
-        currentAudio.play();
-      } catch (err) {
-        const utter = new SpeechSynthesisUtterance(text);
-        utter.voice = getJarvisVoice();
-        utter.onend = () => {
-          arc.className = "arc";
-          if (callback && active) callback();
-        };
-        speechSynthesis.speak(utter);
-      }
+      utter.onstart = () => {
+        arc.className = "arc speaking";
+        statusEl.textContent = "JARVIS speaking...";
+        transcriptEl.textContent = text;
+      };
+      utter.onend = () => {
+        arc.className = "arc";
+        if (callback && active) callback();
+      };
+      speechSynthesis.speak(utter);
     }
 
     function listen() {
@@ -148,7 +118,7 @@ let currentAudio = null;
         transcriptEl.textContent = "You: " + userText;
         arc.className = "arc";
         statusEl.textContent = "Thinking...";
-        await askGroq(userText);
+        await askGemini(userText);
       };
 
       recognition.onerror = () => {
@@ -158,27 +128,27 @@ let currentAudio = null;
       recognition.start();
     }
 
-    async function askGroq(userText) {
-      messages.push({ role: "user", content: userText });
+    async function askGemini(userText) {
+      chatHistory.push({ role: "user", parts: [{ text: userText }] });
       try {
-      const res = await fetch("https://api.groq." + "com/openai/v1/chat/completions", {
+        const endpoint = "https://generativelanguage.googleapis." + "com/v1beta/models/gemini-2.5-flash:generateContent?key=" + GEMINI_KEY;
+        const res = await fetch(endpoint, {
           method: "POST",
-          headers: {
-            "Authorization": `Bearer ${GROQ_API_KEY}`,
-            "Content-Type": "application/json"
-          },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            model: "llama-3.1-8b-instant",
-            messages: messages,
-            max_tokens: 150
+            systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+            contents: chatHistory
           })
         });
         const data = await res.json();
-        const reply = data.choices[0].message.content;
-        messages.push({ role: "assistant", content: reply });
+        if (!res.ok) throw new Error(data.error?.message || "API Error");
+
+        const reply = data.candidates[0].content.parts[0].text;
+        chatHistory.push({ role: "model", parts: [{ text: reply }] });
         speak(reply, listen);
       } catch (err) {
-        speak("Apologies, Sir. I encountered a network interruption.", listen);
+        statusEl.textContent = "Error: " + err.message;
+        speak("Apologies, Sir. " + err.message, listen);
       }
     }
 
@@ -186,7 +156,6 @@ let currentAudio = null;
       active = true;
       document.getElementById("startBtn").style.display = "none";
       document.getElementById("endBtn").style.display = "inline-block";
-      messages.push({ role: "assistant", content: initialMsg });
       speak(initialMsg, listen);
     }
 
@@ -200,7 +169,6 @@ let currentAudio = null;
       document.getElementById("endBtn").style.display = "none";
     }
 
-    // Preload voices in Chrome
     speechSynthesis.onvoiceschanged = getJarvisVoice;
   </script>
 </body>
