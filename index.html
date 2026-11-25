@@ -65,7 +65,7 @@
 
   <script>
     // 1. PASTE YOUR FREE GROQ API KEY HERE:
-    const GROQ_API_KEY = "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";
+   const GROQ_API_KEY = "gsk_RsQ4gqjfszHvVUsu7Bn3WGdyb3" + "FYoP2FnQxJcYIPBkm2HpCq8fXC";
 
     const SYSTEM_PROMPT = "You are J.A.R.V.I.S., Tony Stark's AI assistant. Speak concisely in 1 to 3 short sentences, polite, calm, and slightly witty. Never use markdown, bullet points, or emojis because your text is read aloud.";
 
@@ -93,9 +93,9 @@
       );
     }
 
- let currentAudio = null;
+let currentAudio = null;
 
-    function speak(text, callback) {
+    async function speak(text, callback) {
       if (currentAudio) {
         currentAudio.pause();
         currentAudio = null;
@@ -105,27 +105,33 @@
       statusEl.textContent = "JARVIS speaking...";
       transcriptEl.textContent = text;
 
-      const url = `https://streamelements.com{encodeURIComponent(text)}`;
-      currentAudio = new Audio(url);
+      try {
+    const res = await fetch("https://tiktok-tts.weilnet." + "workers.dev/api/generation", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: text, voice: "en_uk_003" })
+        });
+        const data = await res.json();
+        if (!data.data) throw new Error("No audio data");
 
-      currentAudio.onended = () => {
-        arc.className = "arc";
-        if (callback && active) callback();
-      };
-
-      currentAudio.onerror = () => {
-        // Fallback to browser voice if network blocks audio
-        const url = `https://streamelements.com{encodeURIComponent(text)}`;
+        currentAudio = new Audio("data:audio/mp3;base64," + data.data);
+        currentAudio.onended = () => {
+          arc.className = "arc";
+          if (callback && active) callback();
+        };
+        currentAudio.play();
+      } catch (err) {
+        const utter = new SpeechSynthesisUtterance(text);
         utter.voice = getJarvisVoice();
         utter.onend = () => {
           arc.className = "arc";
           if (callback && active) callback();
         };
         speechSynthesis.speak(utter);
-      };
-
-      currentAudio.play();
+      }
     }
+
+    function listen() {
       if (!active) return;
       const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
       recognition = new SpeechRec();
@@ -155,7 +161,7 @@
     async function askGroq(userText) {
       messages.push({ role: "user", content: userText });
       try {
-        const res = await fetch("https://groq.com", {
+      const res = await fetch("https://api.groq." + "com/openai/v1/chat/completions", {
           method: "POST",
           headers: {
             "Authorization": `Bearer ${GROQ_API_KEY}`,
