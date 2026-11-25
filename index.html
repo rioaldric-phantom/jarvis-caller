@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>J.A.R.V.I.S. Voice Link</title>
+  <style>
+    body {
+      background: #070b14;
+      color: #38bdf8;
+      font-family: 'Segoe UI', sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      margin: 0;
+      text-align: center;
+    }
+    .arc {
+      width: 140px;
+      height: 140px;
+      border-radius: 50%;
+      border: 4px solid #38bdf8;
+      box-shadow: 0 0 25px #0284c7, inset 0 0 20px #0284c7;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 24px;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .speaking {
+      transform: scale(1.12);
+      box-shadow: 0 0 50px #38bdf8, inset 0 0 30px #38bdf8;
+    }
+    .listening {
+      border-color: #22c55e;
+      box-shadow: 0 0 40px #22c55e;
+    }
+    button {
+      background: #0284c7;
+      color: white;
+      border: none;
+      padding: 14px 28px;
+      font-size: 16px;
+      border-radius: 30px;
+      cursor: pointer;
+      margin: 8px;
+    }
+    button.end { background: #dc2626; }
+    #status { color: #94a3b8; margin-bottom: 16px; font-size: 14px; }
+    #transcript { max-width: 85%; color: #e2e8f0; min-height: 48px; }
+  </style>
+</head>
+<body>
+
+  <div id="arc" class="arc">JARVIS</div>
+  <div id="status">Tap "Answer Call" to connect</div>
+  <div id="transcript"></div>
+
+  <div>
+    <button id="startBtn" onclick="startCall()">Answer Call</button>
+    <button id="endBtn" class="end" onclick="endCall()" style="display:none;">End Call</button>
+  </div>
+
+  <script>
+    // 1. PASTE YOUR FREE GROQ API KEY HERE:
+    const GROQ_API_KEY = "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";
+
+    const SYSTEM_PROMPT = "You are J.A.R.V.I.S., Tony Stark's AI assistant. Speak concisely in 1 to 3 short sentences, polite, calm, and slightly witty. Never use markdown, bullet points, or emojis because your text is read aloud.";
+
+    let messages = [{ role: "system", content: SYSTEM_PROMPT }];
+    let active = false;
+    let recognition;
+
+    const arc = document.getElementById("arc");
+    const statusEl = document.getElementById("status");
+    const transcriptEl = document.getElementById("transcript");
+
+    // Grab initial message from Grok Bot URL (?msg=...)
+    const urlParams = new URLSearchParams(window.location.search);
+    const initialMsg = urlParams.get("msg") || "Good day, Sir. Systems are online. How may I assist you?";
+
+    function getJarvisVoice() {
+      const voices = speechSynthesis.getVoices();
+      return (
+        voices.find(v => v.name.includes("Google UK English Male")) ||
+        voices.find(v => v.name.includes("Daniel")) ||
+        voices.find(v => v.lang === "en-GB") ||
+        voices[0]
+      );
+    }
+
+    function speak(text, callback) {
+      speechSynthesis.cancel();
+      const utter = new SpeechSynthesisUtterance(text);
+      utter.voice = getJarvisVoice();
+      utter.pitch = 0.9;
+      utter.rate = 1.05;
+
+      utter.onstart = () => {
+        arc.className = "arc speaking";
+        statusEl.textContent = "JARVIS speaking...";
+        transcriptEl.textContent = text;
+      };
+      utter.onend = () => {
+        arc.className = "arc";
+        if (callback && active) callback();
+      };
+      speechSynthesis.speak(utter);
+    }
+
+    function listen() {
+      if (!active) return;
+      const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+      recognition = new SpeechRec();
+      recognition.lang = "en-US";
+      recognition.interimResults = false;
+
+      recognition.onstart = () => {
+        arc.className = "arc listening";
+        statusEl.textContent = "Listening...";
+      };
+
+      recognition.onresult = async (event) => {
+        const userText = event.results[0][0].transcript;
+        transcriptEl.textContent = "You: " + userText;
+        arc.className = "arc";
+        statusEl.textContent = "Thinking...";
+        await askGroq(userText);
+      };
+
+      recognition.onerror = () => {
+        if (active) setTimeout(listen, 800);
+      };
+
+      recognition.start();
+    }
+
+    async function askGroq(userText) {
+      messages.push({ role: "user", content: userText });
+      try {
+        const res = await fetch("https://groq.com", {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${GROQ_API_KEY}`,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            model: "llama-3.1-8b-instant",
+            messages: messages,
+            max_tokens: 150
+          })
+        });
+        const data = await res.json();
+        const reply = data.choices[0].message.content;
+        messages.push({ role: "assistant", content: reply });
+        speak(reply, listen);
+      } catch (err) {
+        speak("Apologies, Sir. I encountered a network interruption.", listen);
+      }
+    }
+
+    function startCall() {
+      active = true;
+      document.getElementById("startBtn").style.display = "none";
+      document.getElementById("endBtn").style.display = "inline-block";
+      messages.push({ role: "assistant", content: initialMsg });
+      speak(initialMsg, listen);
+    }
+
+    function endCall() {
+      active = false;
+      speechSynthesis.cancel();
+      if (recognition) recognition.stop();
+      arc.className = "arc";
+      statusEl.textContent = "Call ended.";
+      document.getElementById("startBtn").style.display = "inline-block";
+      document.getElementById("endBtn").style.display = "none";
+    }
+
+    // Preload voices in Chrome
+    speechSynthesis.onvoiceschanged = getJarvisVoice;
+  </script>
+</body>
+</html>
