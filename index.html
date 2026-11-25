@@ -81,11 +81,13 @@
     const urlParams = new URLSearchParams(window.location.search);
     const initialMsg = urlParams.get("msg") || "Good day, Sir. Systems are online. How may I assist you?";
 
-    function getJarvisVoice() {
+   function getJarvisVoice() {
       const voices = speechSynthesis.getVoices();
       return (
+        voices.find(v => v.name.includes("Ryan") && v.lang.includes("GB")) ||
         voices.find(v => v.name.includes("Google UK English Male")) ||
         voices.find(v => v.name.includes("Daniel")) ||
+        voices.find(v => v.name.includes("Arthur")) ||
         voices.find(v => v.lang === "en-GB") ||
         voices[0]
       );
