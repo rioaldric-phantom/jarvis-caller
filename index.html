@@ -93,26 +93,39 @@
       );
     }
 
-    function speak(text, callback) {
-      speechSynthesis.cancel();
-      const utter = new SpeechSynthesisUtterance(text);
-      utter.voice = getJarvisVoice();
-      utter.pitch = 0.9;
-      utter.rate = 1.05;
+ let currentAudio = null;
 
-      utter.onstart = () => {
-        arc.className = "arc speaking";
-        statusEl.textContent = "JARVIS speaking...";
-        transcriptEl.textContent = text;
-      };
-      utter.onend = () => {
+    function speak(text, callback) {
+      if (currentAudio) {
+        currentAudio.pause();
+        currentAudio = null;
+      }
+
+      arc.className = "arc speaking";
+      statusEl.textContent = "JARVIS speaking...";
+      transcriptEl.textContent = text;
+
+      const url = `https://streamelements.com{encodeURIComponent(text)}`;
+      currentAudio = new Audio(url);
+
+      currentAudio.onended = () => {
         arc.className = "arc";
         if (callback && active) callback();
       };
-      speechSynthesis.speak(utter);
-    }
 
-    function listen() {
+      currentAudio.onerror = () => {
+        // Fallback to browser voice if network blocks audio
+        const url = `https://streamelements.com{encodeURIComponent(text)}`;
+        utter.voice = getJarvisVoice();
+        utter.onend = () => {
+          arc.className = "arc";
+          if (callback && active) callback();
+        };
+        speechSynthesis.speak(utter);
+      };
+
+      currentAudio.play();
+    }
       if (!active) return;
       const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
       recognition = new SpeechRec();
